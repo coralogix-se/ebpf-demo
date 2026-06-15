@@ -1,0 +1,597 @@
+# yamllint disable rule:line-length
+---
+global:
+  domain: cx498.coralogix.com
+  clusterName: onlineboutique
+  logLevel: warn
+  otelDemoName: coralogix-otel-demo
+
+opentelemetry-agent:
+  enabled: true
+  #image:
+  #  repository: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+  #  tag: "0.135.0"
+
+  # targetAllocator:
+  #   enabled: true
+  #   replicas: 1
+  #   allocationStrategy: "per-node"
+  #   prometheusCR:
+  #     enabled: true
+  #     serviceMonitorSelector:
+  #       EnableOtelCollector: "true"
+  #     podMonitorSelector:
+  #       EnableOtelCollector: "true"
+
+
+  presets:
+    coralogixExporter:
+      enabled: true
+      pipelines: ["metrics", "logs"]  # exclude traces
+    profilesCollection:
+      enabled: false  # ProfilesService (v1development) not implemented by collector; keep off to avoid profiler errors
+    hostMetrics:
+      enabled: true
+      # Enables process metrics scraping.
+      # Disabled by default, requires privileged mode
+      process:
+        enabled: true
+      collectionInterval: "{{.Values.global.collectionInterval}}" 
+    logsCollection:
+      enabled: true
+      reduceLogAttributes:
+        enabled: true
+    hostEntityEvents:
+      enabled: true
+    fleetManagement:
+      enabled: true
+# needed for ebpf - disables traces/sampled pipeline
+    headSampling:
+      enabled: false
+      percentage: 0.0
+    kubeletMetrics:
+      enabled: true
+    collectorMetrics:
+      enabled: true
+    statsdReceiver:
+      enabled: true
+    reduceResourceAttributes:
+      enabled: true
+    #logsCollection:
+    # extraFilelogOperators:
+    #   - type: recombine
+    #     combine_field: body
+    #     source_identifier: attributes["log.file.path"]
+    #     is_first_entry: body matches "\\[otel\\.javaagent\\s+\\d+\\-\\d+\\-\\d+\\s+\\d+\\:\\d+\\:\\d+\\:\\d+\\s+[+-]\\d+\\]"
+    #   - type: recombine
+    #     combine_field: body
+    #     source_identifier: attributes["log.file.path"]
+    #     is_first_entry: body matches "^Error\\:"
+    # multilineConfigs:
+    #   - namespaceName:
+    #       value: "{{.Values.global.otelDemoNS}}"
+    #     firstEntryRegex: \[otel\.javaagent\s+\d+\-\d+\-\d+\s+\d+\:\d+\:\d+\:\d+\s+[+-]\d+\]
+    #   - containerName:
+    #       value: frontend
+    #     firstEntryRegex: 'Error\:'
+
+    spanMetrics:
+      enabled: false
+      collectionInterval: "{{.Values.global.collectionInterval}}"
+      metricsExpiration: 5m
+      histogramBuckets:
+        [1ms, 4ms, 10ms, 20ms, 50ms, 100ms, 200ms, 500ms, 1s, 2s, 5s]
+      extraDimensions:
+        - name: http.method
+        - name: cgx.transaction
+        - name: cgx.transaction.root
+        - name: status_code
+      namespace: ""
+      dbMetrics:
+        enabled: false
+      errorTracking:
+        enabled: false
+      # metrics_expiration: 5m
+      # metrics_flush_interval: '30s'
+      transformStatements:
+      - set(attributes["db.namespace"], attributes["db.name"]) where attributes["db.namespace"] == nil
+      - set(attributes["db.namespace"], attributes["server.address"]) where attributes["db.namespace"] == nil
+      - set(attributes["db.namespace"], attributes["network.peer.name"]) where attributes["db.namespace"] == nil
+      - set(attributes["db.namespace"], attributes["net.peer.name"]) where attributes["db.namespace"] == nil
+      - set(attributes["db.namespace"], attributes["db.system"]) where attributes["db.namespace"] == nil
+      - set(attributes["db.operation.name"], attributes["db.operation"]) where attributes["db.operation.name"] == nil
+      - set(attributes["db.collection.name"], attributes["db.sql.table"]) where attributes["db.collection.name"] == nil
+      - set(attributes["db.collection.name"], attributes["db.cassandra.table"]) where attributes["db.collection.name"] == nil
+      - set(attributes["db.collection.name"], attributes["db.mongodb.collection"]) where attributes["db.collection.name"] == nil
+      - set(attributes["db.collection.name"], attributes["db.redis.database_index"]) where attributes["db.collection.name"] == nil
+      - set(attributes["db.collection.name"], attributes["db.elasticsearch.path_parts.index"]) where attributes["db.collection.name"] == nil
+      - set(attributes["db.collection.name"], attributes["db.cosmosdb.container"]) where attributes["db.collection.name"] == nil
+      - set(attributes["db.collection.name"], attributes["aws_dynamodb.table_names"]) where attributes["db.collection.name"] == nil
+      spanNameReplacePattern:
+        - regex: sessionId=[a-f0-9\\-]+
+          replacement: sessionId={sessionId}
+        - regex: productIds=[A-Z0-9]+
+          replacement: productIds={productId}
+        - regex: /api/shipping[A-Za-z0-9=+?{}%&]+
+          replacement: /api/shipping
+        - regex: /api/recommendations[A-Za-z0-9=?{}%&]+
+          replacement: /api/recommendations
+        - regex: /api/products/[A-Z0-9]+
+          replacement: /api/products/{productId}
+        - regex: contextKeys=[a-z]+
+          replacement: contextKeys={contextKey}
+        - regex: currencyCode=($|[A-Z]+)
+          replacement: currencyCode={currencyCode}
+    loadBalancing:
+      enabled: false
+      routingKey: "traceID"
+      hostname: coralogix-opentelemetry-gateway
+      # dnsResolverInterval: 20s
+      # dnsResolverTimeout: 5s
+
+  # eBPF-only trace intake: use ports 4319 (grpc) / 4320 (http). Point eBPF instrumentation at
+  # $(NODE_IP):4319 (or :4320 for HTTP). App traces stay on 4317/4318 and are dropped (debug).
+  # Span metrics (calls_total, latency) are produced by spanmetrics/ebpf and sent via metrics/ebpf pipeline.
+  ports:
+    otlp-ebpf-grpc:
+      enabled: true
+      containerPort: 4319
+      servicePort: 4319
+      hostPort: 4319
+      protocol: TCP
+    otlp-ebpf-http:
+      enabled: true
+      containerPort: 4320
+      servicePort: 4320
+      hostPort: 4320
+      protocol: TCP
+
+  # Span metrics from eBPF are sent via dedicated pipeline metrics/ebpf in config.service.pipelines below.
+  # Do not set extraConfig.service.pipelines.metrics.receivers here or it replaces the default
+  # metrics receivers (host, kubelet, etc.) and you lose those metrics.
+  extraConfig: {}
+
+  config:
+    receivers:
+      otlp/ebpf:
+        protocols:
+          grpc:
+            endpoint: ${env:MY_POD_IP}:4319
+          http:
+            endpoint: ${env:MY_POD_IP}:4320
+    connectors:
+      spanmetrics/ebpf:
+        namespace: ""
+        histogram:
+          explicit:
+            buckets: [2ms, 4ms, 6ms, 8ms, 10ms, 50ms, 100ms, 200ms, 400ms, 1s, 5s]
+    processors:
+      k8sattributes:
+        filter:
+          node_from_env_var: KUBE_NODE_NAME
+        extract:
+          labels:
+            - tag_name: app.label.component
+              key: app.kubernetes.io/component
+              from: pod
+      # Drop spans from OBI and k8s-cache pods so their traffic does not appear in eBPF traces.
+      # Uses legacy filter format (traces.span) for compatibility with collector < 0.146.
+      filter/drop_obi_traces:
+        error_mode: ignore
+        traces:
+          span:
+            - 'resource.attributes["k8s.deployment.name"] == "opentelemetry-ebpf-instrumentation"'
+            - 'resource.attributes["k8s.daemonset.name"] == "opentelemetry-ebpf-instrumentation"'
+            - 'IsMatch(resource.attributes["k8s.pod.name"], "^opentelemetry-ebpf-instrumentation-.*")'
+            - 'resource.attributes["k8s.deployment.name"] == "opentelemetry-ebpf-instrumentation-k8s-cache"'
+            - 'resource.attributes["k8s.statefulset.name"] == "opentelemetry-ebpf-instrumentation-k8s-cache"'
+            - 'IsMatch(resource.attributes["k8s.pod.name"], "^opentelemetry-ebpf-instrumentation-k8s-cache-.*")'
+            - 'IsMatch(resource.attributes["k8s.pod.name"], ".*k8s-cache.*")'
+            - 'IsMatch(resource.attributes["k8s.deployment.name"], ".*k8s-cache.*")'
+            - 'IsMatch(resource.attributes["k8s.statefulset.name"], ".*k8s-cache.*")'
+            - 'IsMatch(resource.attributes["service.name"], ".*k8s-cache.*")'
+      # Reduce DNS metric cardinality by dropping dns.question.name (exported as dns_question_name).
+      transform/dns_reduce_cardinality:
+        metric_statements:
+          - context: datapoint
+            statements:
+              - delete_key(attributes, "dns.question.name")
+              - delete_key(attributes, "dns_question_name")
+      # Promote trace IDs from JSON log body to top-level attributes for Coralogix log–trace correlation.
+      # Handles OBI log_enricher fields (trace_id, span_id) and legacy manual fields (traceId, parentId).
+      # Only parse when body starts with "{" so non-JSON logs (e.g. loader) pass through without error.
+      transform/log_json_promote:
+        log_statements:
+          - context: log
+            statements:
+              - set(cache, ParseJSON(body)) where IsString(body) and Len(body) > 0 and Substring(body, 0, 1) == "{"
+              - set(attributes["traceId"], cache["traceId"]) where cache["traceId"] != nil
+              - set(attributes["traceId"], cache["trace_id"]) where cache["trace_id"] != nil and attributes["traceId"] == nil
+              - set(attributes["spanId"], cache["span_id"]) where cache["span_id"] != nil
+              - set(attributes["parentId"], cache["parentId"]) where cache["parentId"] != nil
+              - set(attributes["service.name"], cache["service"]) where cache["service"] != nil
+    exporters:
+      coralogix:
+        subsystem_name_attributes:
+          - app.label.component
+          - k8s.deployment.name
+          - k8s.statefulset.name
+          - k8s.cronjob.name
+          - service.name
+      debug: {}
+    service:
+      pipelines:
+        # Promote traceId/parentId from JSON log body to top-level so logs correlate with traces in Coralogix.
+        # Ensure logs are exported to coralogix (preset may merge; explicit so logs from ebpf-demo namespace appear).
+        logs:
+          processors: [transform/log_json_promote, batch]
+          exporters: [coralogix]
+        traces:
+          exporters: [debug]
+        # k8sattributes enriches eBPF spans with pod/namespace/deployment so service names and correlation work even if OBI misses some metadata
+        "traces/ebpf":
+          receivers: [otlp/ebpf]
+          processors: [k8sattributes, filter/drop_obi_traces, batch]
+          exporters: [spanmetrics/ebpf, coralogix]
+        "metrics/ebpf":
+          receivers: [spanmetrics/ebpf]
+          processors: [transform/dns_reduce_cardinality, batch]
+          exporters: [coralogix]
+  # No profilesSupport gate: profiles disabled (ProfilesService not implemented)
+  # command:
+  #   extraArgs: [ "--feature-gates=service.profilesSupport" ]
+  targetAllocator:
+    enabled: false
+
+# Disabled: profiler sends to ProfilesService (opentelemetry.proto.collector.profiles.v1development)
+# which the collector does not implement → "unknown service ProfilesService" errors.
+# eBPF traces still come from opentelemetry-ebpf-instrumentation (OBI). If you still see profiler
+# errors after upgrade, remove any existing profiler workload:
+#   kubectl get daemonset,deployment -n <namespace> | grep -i profiler
+#   kubectl delete daemonset <profiler-daemonset> -n <namespace>  # or deployment
+coralogix-ebpf-profiler:
+  enabled: false
+  # profiling:
+  #   profiling_otel_agent:
+  #     otel:
+  #       exporter:
+  #         endpoint: "$(HOST_IP):4319"
+
+opentelemetry-ebpf-instrumentation:
+  enabled: true
+  initContainers:
+    # Mount bpffs on the node (required for OBI log_enricher; see ebpflogs demo).
+    - name: mount-bpf-fs
+      image: alpine:3.23
+      command:
+        - sh
+        - -c
+        - |
+          apk add --no-cache util-linux >/dev/null
+          nsenter -t 1 -m -- sh -c '
+            mkdir -p /sys/fs/bpf
+            if ! mountpoint -q /sys/fs/bpf; then
+              mount -t bpf bpffs /sys/fs/bpf
+            fi
+          '
+      securityContext:
+        privileged: true
+    # Wait for k8s cache to be ready so OBI gets metadata (avoids "K8s cache service connection lost" at startup).
+    - name: wait-for-k8s-cache
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for k8s cache at opentelemetry-ebpf-instrumentation-k8s-cache:50055..."
+          until nc -z opentelemetry-ebpf-instrumentation-k8s-cache 50055; do
+            sleep 2
+          done
+          echo "K8s cache is ready"
+  volumes:
+    - name: bpffs
+      hostPath:
+        path: /sys/fs/bpf
+        type: DirectoryOrCreate
+    - name: host-proc
+      hostPath:
+        path: /proc
+        type: Directory
+    - name: securityfs
+      hostPath:
+        path: /sys/kernel/security
+        type: DirectoryOrCreate
+  volumeMounts:
+    - name: bpffs
+      mountPath: /sys/fs/bpf
+      mountPropagation: Bidirectional
+    - name: host-proc
+      mountPath: /proc
+      readOnly: true
+    - name: securityfs
+      mountPath: /sys/kernel/security
+      readOnly: true
+  # Full context propagation so eBPF traces link across services (distributed traces).
+  # "all" enables network-level propagation (OTEL_EBPF_BPF_CONTEXT_PROPAGATION=all);
+  # default "http,tcp" leaves network-level propagation disabled and traces look disconnected.
+  contextPropagation:
+    enabled: true
+    mode: "all"
+  # K8s cluster name for span attributes; should match global.clusterName (redeploy-ebpf-demo.sh sets both from CLUSTER_NAME).
+  env:
+    OTEL_EBPF_BPF_FS_PATH: /sys/fs/bpf
+    OTEL_EBPF_KUBE_CLUSTER_NAME: "coralogixEbpf"
+    # Track incoming Traceparent headers so OBI uses provided trace ID for spans (non-Go runtimes).
+    # Without this, OBI may not link to upstream trace; enables more complete distributed traces.
+    OTEL_EBPF_BPF_TRACK_REQUEST_HEADERS: "true"
+  config:
+    data:
+      # OBI log_enricher: inject trace_id/span_id into synchronous stdout JSON on the request thread.
+      # Apps need no trace-log code; enrichment is eBPF-side (same pattern as ebpflogs demo).
+      # Requires kernel 6.12+ on nodes; sync writes on the request thread (not async loggers).
+      ebpf:
+        log_enricher:
+          services:
+            - service:
+                - k8s_namespace: ebpfdemo
+        track_request_headers: true
+        context_propagation: all
+      # Send traces to agent eBPF-only port (4320 HTTP) so span metrics come from eBPF only
+      otel_traces_export:
+        endpoint: "http://${HOST_IP}:4320"
+      # Metrics can stay on default (agent still receives on 4318)
+      # otel_metrics_export:
+      #   endpoint: "http://${HOST_IP}:4318"
+      # Give Java processes more time to respond to runtime attach (default 10s); reduces "java attach timed out" for Kafka/ad/fraud-detection.
+      javaagent:
+        attach_timeout: 30s
+      # discovery.instrument must match ebpf.log_enricher.services (OBI trace-log correlation requirement).
+      discovery:
+        instrument:
+          - k8s_namespace: ebpfdemo
+        exclude_instrument:
+          - exe_path: ".*ebpf-instrument.*|.*otelcol.*"
+        min_process_age: 2s
+      # Populate http.route so Coralogix "Action" and span names are meaningful (default heuristic).
+      # Ignore /health so k8s probes and init-container health checks don't create separate one-span traces.
+      routes:
+        unmatch: heuristic
+        ignored_patterns:
+          - /health
+        ignore_mode: traces
+  # OBI needs guaranteed CPU; on t3.large (2 vCPU/node) we cap limit at 1 so agent (1 limit) + OBI fit.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+coralogix-operator:
+  enabled: false
+
+opentelemetry-cluster-collector:
+  presets:
+    coralogixExporter:
+      enabled: true
+      privateKey: ${env:CORALOGIX_PRIVATE_KEY}
+      pipelines: ["metrics", "logs"]  # exclude traces (traces → debug only)
+    kubernetesEvents:
+      enabled: true
+    reduceResourceAttributes:
+      enabled: true
+    kubernetesResources:
+      enabled: true
+    fleetManagement:
+      enabled: true
+    clusterMetrics:
+      enabled: true
+    collectorMetrics:
+      enabled: true
+    kubernetesExtraMetrics:
+      enabled: true
+      scrapeAll: false
+# For ebpf, no spanMetrics needed
+    spanMetrics:
+      enabled: false
+  # No profilesSupport gate (profiles pipeline removed below)
+  # command:
+  #   extraArgs: [ "--feature-gates=service.profilesSupport" ]
+  config:
+    exporters:
+      debug: {}
+      coralogix:
+        traces:
+          headers:
+            "Authorization": "Bearer ${env:CORALOGIX_PRIVATE_KEY}"
+        metrics:
+          headers:
+            "Authorization": "Bearer ${env:CORALOGIX_PRIVATE_KEY}"
+        logs:
+          headers:
+            "Authorization": "Bearer ${env:CORALOGIX_PRIVATE_KEY}"
+        #profiles:
+        #  headers:
+        #    "Authorization": "Bearer ${env:CORALOGIX_PRIVATE_KEY}"
+
+        subsystem_name_attributes:
+          - app.label.component
+          - k8s.deployment.name
+          - k8s.statefulset.name
+          - k8s.cronjob.name
+          - service.name
+    processors:
+      transform/kube-events:
+        error_mode: ignore
+      transform/db-normalize:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - set(attributes["db.system"], "postgresql") where attributes["db.system"] == nil and (attributes["db.statement"] != nil or (attributes["db.connection_string"] != nil and IsMatch(String(attributes["db.connection_string"]), "postgresql")))
+              - set(attributes["db.namespace"], "otelshop") where attributes["db.namespace"] == nil and attributes["db.system"] == "postgresql"
+      transform/obfuscate-sql:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              # Create a normalized, low-cardinality SQL statement
+              # Strategy: Extract operation type and table, obfuscate values
+              # This creates shorter statements that are less likely to be truncated
+              # Step 1: Replace string literals (single quoted)
+              #- replace_pattern(attributes["db.statement"], "'[^']*'", "?") where attributes["db.statement"] != nil
+              # Step 2: Replace numeric values
+              #- replace_pattern(attributes["db.statement"], "\\b\\d+\\.?\\d*\\b", "?") where attributes["db.statement"] != nil
+              # Step 3: Normalize IN clauses
+              #- replace_pattern(attributes["db.statement"], "IN\\s*\\([^)]+\\)", "IN (?)") where attributes["db.statement"] != nil
+              # Step 4: Normalize VALUES clauses
+              #- replace_pattern(attributes["db.statement"], "VALUES\\s*\\([^)]+\\)(,\\s*\\([^)]+\\))*", "VALUES (?)") where attributes["db.statement"] != nil
+      transform/sanitize-http:
+        error_mode: ignore
+        trace_statements:
+          - context: span
+            statements:
+              - set(name, attributes["http.route"]) where attributes["http.route"] != nil
+              - replace_pattern(name, "sessionId=[a-f0-9-]+", "sessionId={sessionId}")
+              - replace_pattern(name, "productIds=[A-Za-z0-9-]+", "productIds={productId}")
+              - replace_pattern(name, "/api/products/[A-Za-z0-9-]+", "/api/products/{productId}")
+              - replace_pattern(name, "/api/shipping[A-Za-z0-9=+?{}%&]+", "/api/shipping")
+              - replace_pattern(name, "/api/recommendations[A-Za-z0-9=?{}%&]+", "/api/recommendations")
+              - replace_pattern(name, "contextKeys=[a-z]+", "contextKeys={contextKey}")
+              - replace_pattern(name, "currencyCode=($|[A-Z]+)", "currencyCode={currencyCode}")
+              - replace_pattern(attributes["http.target"], "sessionId=[^&]+", "sessionId={sessionId}") where attributes["http.target"] != nil
+              - replace_pattern(attributes["http.target"], "productIds=[^&]+", "productIds={productId}") where attributes["http.target"] != nil
+              - replace_pattern(attributes["http.target"], "contextKeys=[^&]+", "contextKeys={contextKey}") where attributes["http.target"] != nil
+              - replace_pattern(attributes["http.target"], "currencyCode=([^&]*)", "currencyCode={currencyCode}") where attributes["http.target"] != nil
+              - replace_pattern(attributes["http.url"], "sessionId=[^&]+", "sessionId={sessionId}") where attributes["http.url"] != nil
+              - replace_pattern(attributes["http.url"], "currencyCode=([^&]*)", "currencyCode={currencyCode}") where attributes["http.url"] != nil
+              - replace_pattern(attributes["url.full"], "sessionId=[^&]+", "sessionId={sessionId}") where attributes["url.full"] != nil
+              - replace_pattern(attributes["url.full"], "currencyCode=([^&]*)", "currencyCode={currencyCode}") where attributes["url.full"] != nil
+    receivers:
+      httpcheck/frontendproxy:
+        targets:
+          # this env var is not available in the context of the opentelemetry-cluster-collector
+          - endpoint: http://frontend-proxy:8080
+      # redis receiver removed: eBPF demo has no valkey-cart (Astronomy Shop only)
+      kafkametrics:
+        protocol_version: 3.0.0
+        scrapers:
+          - brokers
+          - topics
+          - consumers
+        brokers: "{{.Values.global.otelDemoName}}-kafka.{{.Values.global.otelDemoName}}:9092"
+      otlp:
+        protocols:
+          grpc:
+            endpoint: ${env:MY_POD_IP}:4317
+          http:
+            # This is needed to allow the frontend traces from the RUM in the browser to access the collector to be ingested
+            cors:
+              allowed_origins:
+                - "http://*"
+                - "https://*"
+            endpoint: ${env:MY_POD_IP}:4318
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: opentelemetry-collector
+            scrape_interval: 30s
+            static_configs:
+            - targets: ["${env:MY_POD_IP}:8888"]
+          - job_name: postgres-exporter
+            scrape_interval: 30s
+            kubernetes_sd_configs:
+            - role: pod
+            relabel_configs:
+            - action: keep
+              source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+              regex: postgresql
+            - action: keep
+              source_labels: [__meta_kubernetes_pod_container_port_number]
+              regex: "9187"
+            - action: replace
+              source_labels: [__meta_kubernetes_pod_ip]
+              regex: (.*)
+              target_label: __address__
+              replacement: $1:9187
+    service:
+      pipelines:
+        metrics:
+          receivers:
+            - otlp
+            - prometheus
+            - k8s_cluster
+            - prometheus/k8s_extra_metrics
+            - httpcheck/frontendproxy
+        traces:
+          receivers:
+            - otlp
+          processors:
+            - transform/db-normalize
+            - transform/obfuscate-sql
+            - transform/sanitize-http
+          exporters:
+            - debug
+        # profiles pipeline removed: ProfilesService (v1development) not implemented; avoids profiler errors
+        # profiles:
+        #   receivers: [otlp]
+        #   processors: [...]
+        #   exporters: [coralogix]
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits: 
+      cpu: 1
+      memory: 2G
+
+  ports:
+    otlp:
+      enabled: true
+    otlp-http:
+      enabled: true
+
+opentelemetry-gateway:
+  enabled: false
+  presets:
+    reduceResourceAttributes:
+      enabled: true
+  # For production use-cases please increase replicas
+  # and resource requests and limits
+  replicaCount: 3
+  # resources:
+  #   requests:
+  #     cpu: 0.5
+  #     memory: 256Mi
+  #   limits:
+  #     cpu: 2
+  #     memory: 2G
+
+  config:
+    exporters:
+      coralogix:
+        subsystem_name_attributes:
+          - app.label.component
+          - k8s.deployment.name
+          - k8s.statefulset.name
+          - k8s.cronjob.name
+          - service.name
+    processors:
+      tail_sampling:
+        # Update configuration here, with your settings and tail sampling policies
+        # Docs: https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor
+        policies:
+          [
+            {
+              name: errors-policy,
+              type: status_code,
+              status_code: {status_codes: [ERROR]}
+            },
+            {
+              name: randomized-policy,
+              type: probabilistic,
+              probabilistic: {sampling_percentage: 10}
+            },
+          ]
+
+# yamllint enable rule:line-length

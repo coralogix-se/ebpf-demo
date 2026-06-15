@@ -1,0 +1,41 @@
+# Patch for existing otel-coralogix-integration (ebpflogs namespace): instrument ebpfdemo
+# and enable OBI log_enricher there without replacing ebpflogs demo settings.
+opentelemetry-ebpf-instrumentation:
+  config:
+    data:
+      discovery:
+        instrument:
+          - k8s_namespace: ebpflogs
+            k8s_pod_labels:
+              demo: log-enrichment
+          - k8s_namespace: ebpfdemo
+        exclude_instrument:
+          - exe_path: ".*ebpf-instrument.*|.*otelcol.*"
+      ebpf:
+        log_enricher:
+          services:
+            - service:
+                - k8s_namespace: ebpflogs
+                  k8s_pod_labels:
+                    demo: log-enrichment
+                - k8s_namespace: ebpfdemo
+        track_request_headers: true
+        context_propagation: all
+
+opentelemetry-agent:
+  config:
+    processors:
+      transform/log_json_promote:
+        log_statements:
+          - context: log
+            statements:
+              - set(cache, ParseJSON(body)) where IsString(body) and Len(body) > 0 and Substring(body, 0, 1) == "{"
+              - set(attributes["traceId"], cache["traceId"]) where cache["traceId"] != nil
+              - set(attributes["traceId"], cache["trace_id"]) where cache["trace_id"] != nil and attributes["traceId"] == nil
+              - set(attributes["spanId"], cache["span_id"]) where cache["span_id"] != nil
+              - set(attributes["parentId"], cache["parentId"]) where cache["parentId"] != nil
+              - set(attributes["service.name"], cache["service"]) where cache["service"] != nil
+    service:
+      pipelines:
+        logs:
+          processors: [transform/log_json_promote, batch]
