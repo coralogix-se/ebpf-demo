@@ -28,7 +28,8 @@ The OTel agent promotes `trace_id` → `traceId` for Coralogix log–trace linki
 
 ## What you need
 
-- Kubernetes cluster (e.g. EKS); **kernel 6.12+** for OBI log enrichment (6.0+ minimum).
+- Kubernetes cluster (e.g. EKS or kind); **kernel 6.12+** for OBI log enrichment (6.0+ minimum).
+- Works on **amd64 and arm64** (Apple Silicon kind): `java-demo` uses `eclipse-temurin:17-jdk-jammy` (multi-arch; alpine JDK is amd64-only).
 - `kubectl` and `helm` in PATH.
 - **CORALOGIX_PRIVATE_KEY** (Coralogix send-your-data key).
 
@@ -57,6 +58,8 @@ Pods may take 1–2 minutes to become Ready (Java/.NET/Go compile on first run).
 | **otel-integration/values-ebpf.yaml** | Helm values: OBI log_enricher, propagation, eBPF trace pipeline, log transform. |
 | **otel-integration/README_ebpf.md** | eBPF-specific OTEL integration notes. |
 | **otel-integration/values-ebpfdemo-patch.yaml** | Optional patch when sharing a cluster with another OBI release. |
+| **otel-integration/test-obi-prom-*.yaml** | Kind test values for OBI Prometheus scrape on/off. |
+| **OBI_METRICS.md** | OBI metrics reference + Prometheus endpoint disable notes (validated on OBI v1.0.0). |
 | **TROUBLESHOOTING_EBPF_PROPAGATION.md** | Propagation verification and troubleshooting. |
 | **scripts/investigate-ebpf-propagation.sh** | Check OBI/agent config and pods. |
 
@@ -65,7 +68,7 @@ Pods may take 1–2 minutes to become Ready (Java/.NET/Go compile on first run).
 - **DEMO_NAMESPACE** – default `ebpfdemo`.
 - **CLUSTER_NAME** – default `coralogixEbpf`; must match `global.clusterName` and OBI cluster name.
 - **CORALOGIX_DOMAIN** – default `cx498.coralogix.com`.
-- **HELM_VERSION** – chart version; default `0.0.317` (OBI v0.9.0+ required for log enricher).
+- **HELM_VERSION** – chart version; default `0.0.379` (OBI v1.0.0; log enricher requires OBI v0.9.0+).
 
 ## After deploy
 

@@ -1,0 +1,35 @@
+# Fix A (chart-safe): OBI config port 0 disables scrape server,
+# but DaemonSet template requires a non-zero containerPort —
+# set service.targetPort so K8s port stays valid.
+k8sCache:
+  enabled: false
+
+service:
+  targetPort: 9090
+
+config:
+  create: true
+  data:
+    discovery:
+      instrument:
+        - k8s_namespace: obi-prom-test
+      exclude_instrument:
+        - exe_path: ".*ebpf-instrument.*|.*otelcol.*"
+    otel_traces_export:
+      endpoint: "http://127.0.0.1:4318"
+    otel_metrics_export:
+      endpoint: "http://127.0.0.1:4318"
+    prometheus_export:
+      port: 0
+      path: /metrics
+    attributes:
+      kubernetes:
+        enable: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

@@ -54,6 +54,7 @@ Pods may take 1–2 minutes to become Ready (Java/.NET/Go build on first run). T
 | **redeploy-ebpf-demo.sh** | Full redeploy: delete namespace, create secret, Helm install, apply ebpf-demo.yaml. |
 | **otel-integration/values-ebpf.yaml** | Helm values for Coralogix OTEL (agent, OBI, cluster-collector): eBPF ports 4319/4320, OBI config (propagation, routes, discovery, exclude OBI/k8s-cache), trace filter, logs pipeline. |
 | **otel-integration/README_ebpf.md** | Notes on eBPF-specific OTEL integration settings. |
+| **OBI_METRICS.md** | OBI metrics reference and Prometheus scrape disable options. |
 | **TROUBLESHOOTING_EBPF_PROPAGATION.md** | How propagation works, verification steps, loader/tier1 linking, tier2 “processing” time, dotnet trace split, health-check and filter notes. |
 | **scripts/investigate-ebpf-propagation.sh** | Script to check OBI/agent config and pods for propagation. |
 
@@ -62,7 +63,7 @@ Pods may take 1–2 minutes to become Ready (Java/.NET/Go build on first run). T
 - **DEMO_NAMESPACE** – default `ebpfdemo`.
 - **CLUSTER_NAME** – default `coralogixEbpf`; should match `global.clusterName` and OBI’s cluster name so traces group correctly.
 - **CORALOGIX_DOMAIN** – default `cx498.coralogix.com`.
-- **HELM_VERSION** – chart version; default `0.0.276`.
+- **HELM_VERSION** – chart version; default `0.0.379` (OBI v1.0.0).
 
 ## After deploy
 

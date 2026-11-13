@@ -124,6 +124,7 @@ metadata:
   name: ebpf-demo-python27-forwarder
 data:
   forwarder.py: |
+    # -*- coding: utf-8 -*-
     import os
     import sys
     import json
@@ -135,7 +136,7 @@ data:
     all_services = [s.strip() for s in os.environ.get('ALL_SERVICES', '').split(',') if s.strip()]
     full_bitmap = (1 << len(all_services)) - 1 if all_services else 0
     def log_request(path):
-        # Direct write(1) sync JSON on request thread — required for OBI log_enricher (print() buffering can skip enrichment).
+        # Direct write(1) sync JSON on request thread -- required for OBI log_enricher (print() buffering can skip enrichment).
         os.write(1, json.dumps({"level": "info", "msg": "request", "service": service_name, "path": path}) + "\n")
     def pick_unvisited(bitmap):
         return [i for i in range(len(all_services)) if not (bitmap & (1 << i))]
@@ -748,7 +749,8 @@ spec:
     spec:
       containers:
         - name: java
-          image: eclipse-temurin:17-jdk-alpine
+          # jammy has arm64; alpine tag is amd64-only and fails on Apple Silicon kind
+          image: eclipse-temurin:17-jdk-jammy
           command:
             - /bin/sh
             - -c

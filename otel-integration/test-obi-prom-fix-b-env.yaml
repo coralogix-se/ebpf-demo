@@ -1,0 +1,33 @@
+# Service on (would open :9090) + env override to disable listener
+service:
+  enabled: true
+
+config:
+  create: true
+  data:
+    discovery:
+      instrument:
+        - k8s_namespace: obi-prom-test
+      exclude_instrument:
+        - exe_path: ".*ebpf-instrument.*|.*otelcol.*"
+    otel_traces_export:
+      endpoint: "http://127.0.0.1:4318"
+    otel_metrics_export:
+      endpoint: "http://127.0.0.1:4318"
+    prometheus_export:
+      port: 9090
+      path: /metrics
+    attributes:
+      kubernetes:
+        enable: true
+
+env:
+  OTEL_EBPF_PROMETHEUS_PORT: "0"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi

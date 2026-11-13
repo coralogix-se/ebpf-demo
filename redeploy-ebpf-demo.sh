@@ -13,7 +13,7 @@ fi
 NAMESPACE="${DEMO_NAMESPACE:-ebpfdemo}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Pin chart version to avoid "unable to find exact version; falling back to closest" warning. Override with HELM_VERSION env.
-HELM_VERSION="${HELM_VERSION:-0.0.317}"
+HELM_VERSION="${HELM_VERSION:-0.0.379}"
 CORALOGIX_DOMAIN="${CORALOGIX_DOMAIN:-cx498.coralogix.com}"
 CLUSTER_NAME="${CLUSTER_NAME:-coralogixEbpf}"
 
